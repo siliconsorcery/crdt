@@ -24,28 +24,26 @@ class Hlc<T> implements Comparable<Hlc> {
 
   Hlc.zero(T nodeId) : this(0, 0, nodeId);
 
-  Hlc.fromDate(DateTime dateTime, T nodeId)
-      : this(dateTime.millisecondsSinceEpoch, 0, nodeId);
+  Hlc copyWith({int? millis, int? counter, T? nodeId}) =>
+      Hlc(millis ?? this.millis, counter ?? this.counter, nodeId ?? this.nodeId);
+
+  Hlc apply({int? millis, int? counter, T? nodeId}) =>
+      Hlc(millis ?? this.millis, counter ?? this.counter, nodeId ?? this.nodeId);
+
+  Hlc.fromDate(DateTime dateTime, T nodeId) : this(dateTime.millisecondsSinceEpoch, 0, nodeId);
 
   Hlc.now(T nodeId) : this.fromDate(DateTime.now(), nodeId);
 
-  Hlc.fromLogicalTime(logicalTime, T nodeId)
-      : this(logicalTime >> _shift, logicalTime & _maxCounter, nodeId);
+  Hlc.fromLogicalTime(logicalTime, T nodeId) : this(logicalTime >> _shift, logicalTime & _maxCounter, nodeId);
 
   factory Hlc.parse(String timestamp, [T Function(String value)? idDecoder]) {
     final counterDash = timestamp.indexOf('-', timestamp.lastIndexOf(':'));
     final nodeIdDash = timestamp.indexOf('-', counterDash + 1);
-    final millis = DateTime.parse(timestamp.substring(0, counterDash))
-        .millisecondsSinceEpoch;
-    final counter =
-        int.parse(timestamp.substring(counterDash + 1, nodeIdDash), radix: 16);
+    final millis = DateTime.parse(timestamp.substring(0, counterDash)).millisecondsSinceEpoch;
+    final counter = int.parse(timestamp.substring(counterDash + 1, nodeIdDash), radix: 16);
     final nodeId = timestamp.substring(nodeIdDash + 1);
-    return Hlc(
-        millis, counter, idDecoder != null ? idDecoder(nodeId) : nodeId as T);
+    return Hlc(millis, counter, idDecoder != null ? idDecoder(nodeId) : nodeId as T);
   }
-
-  Hlc apply({int? millis, int? counter, T? nodeId}) => Hlc(
-      millis ?? this.millis, counter ?? this.counter, nodeId ?? this.nodeId);
 
   /// Generates a unique, monotonic timestamp suitable for transmission to
   /// another system in string format. Local wall time will be used if
@@ -101,10 +99,46 @@ class Hlc<T> implements Comparable<Hlc> {
   String toJson() => toString();
 
   @override
-  String toString() =>
-      '${DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true).toIso8601String()}'
+  String toString() => '${DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true).toIso8601String()}'
       '-${counter.toRadixString(16).toUpperCase().padLeft(4, '0')}'
       '-$nodeId';
+
+  // `feat(hulc): pack: Pack HULC into a string
+  // 10 character base36 encoded millis
+  // 4 character base36 encoded counter
+  // 1+ charcters nodeId (ideally: 10 character base36 encoded random id)
+  String pack() {
+    final buffer = StringBuffer();
+    buffer.write(millis.toRadixString(36).padLeft(10, '0').substring(0, 10));
+    // buffer.write(delimiter);
+    buffer.write(counter.toRadixString(36).padLeft(4, '0').substring(0, 4));
+    // buffer.write(delimiter);
+    buffer.write(nodeId);
+    return buffer.toString();
+  }
+
+  // `feat(hulc): unpack: Reinflates a HULC from a packed String
+  static Hlc unpack(String packed) {
+    return Hlc(
+      int.parse(packed.substring(0, 10), radix: 36),
+      int.parse(packed.substring(10, 14), radix: 36),
+      packed.substring(14),
+    );
+  }
+
+  // `feat(hulc): static makeNodeId
+  /// NodeId represented as 10 digit base36 random number as a String.
+  /// One in 2,821,109,907,455 chance of getting a duplicate.
+  static String randomNodeId() {
+    final random = Random.secure();
+
+    final seedA = random.nextInt(4294967296).toRadixString(36);
+    final seedB = random.nextInt(4294967296).toRadixString(36);
+
+    final nodeId = (seedA + seedB).padLeft(10, '0').substring(0, 10);
+
+    return nodeId;
+  }
 
   @override
   int get hashCode => toString().hashCode;
@@ -130,8 +164,7 @@ class Hlc<T> implements Comparable<Hlc> {
 class ClockDriftException implements Exception {
   final int drift;
 
-  ClockDriftException(int millisTs, int millisWall)
-      : drift = millisTs - millisWall;
+  ClockDriftException(int millisTs, int millisWall) : drift = millisTs - millisWall;
 
   @override
   String toString() => 'Clock drift of $drift ms exceeds maximum ($_maxDrift)';

@@ -4,6 +4,7 @@ import 'package:test/test.dart';
 const _millis = 1000000000000;
 const _isoTime = '2001-09-09T01:46:40.000Z';
 const _logicalTime = 65536000000000066;
+const _packed = '00cre66i9s001uabc';
 
 void main() {
   group('Constructors', () {
@@ -19,13 +20,17 @@ void main() {
       expect(Hlc(_millis * 1000, 0x42, 'abc'), hlc);
     });
 
+    test('default with copyWith', () {
+      final newHlc = hlc.copyWith(nodeId: 'xyz');
+      expect(newHlc.nodeId, 'xyz');
+    });
+
     test('zero', () {
       expect(Hlc.zero('abc'), hlc.apply(millis: 0, counter: 0));
     });
 
     test('from date', () {
-      expect(
-          Hlc.fromDate(DateTime.parse(_isoTime), 'abc'), hlc.apply(counter: 0));
+      expect(Hlc.fromDate(DateTime.parse(_isoTime), 'abc'), hlc.apply(counter: 0));
     });
 
     test('logical time', () {
@@ -44,8 +49,7 @@ void main() {
     });
 
     test('Parse hlc', () {
-      expect(
-          Hlc<String>.parse('$_isoTime-0042-abc'), Hlc(_millis, 0x42, 'abc'));
+      expect(Hlc<String>.parse('$_isoTime-0042-abc'), Hlc(_millis, 0x42, 'abc'));
     });
   });
 
@@ -161,6 +165,20 @@ void main() {
     });
   });
 
+  group('Packing', () {
+    test('Pack', () {
+      final hlc = Hlc(_millis, 0x42, 'abc');
+      final packed = hlc.pack();
+      expect(packed, _packed);
+    });
+    test('Unpack', () {
+      final hlc = Hlc.unpack(_packed);
+      expect(hlc.millis, _millis);
+      expect(hlc.counter, 0x42);
+      expect(hlc.nodeId, 'abc');
+    });
+  });
+
   group('Send', () {
     test('Higher canonical time', () {
       final hlc = Hlc(_millis + 1, 0x42, 'abc');
@@ -191,14 +209,12 @@ void main() {
 
     test('Fail on clock drift', () {
       final hlc = Hlc(_millis + 60001, 0, 'abc');
-      expect(() => Hlc.send(hlc, millis: _millis),
-          throwsA(isA<ClockDriftException>()));
+      expect(() => Hlc.send(hlc, millis: _millis), throwsA(isA<ClockDriftException>()));
     });
 
     test('Fail on counter overflow', () {
       final hlc = Hlc(_millis, 0xFFFF, 'abc');
-      expect(() => Hlc.send(hlc, millis: _millis),
-          throwsA(isA<OverflowException>()));
+      expect(() => Hlc.send(hlc, millis: _millis), throwsA(isA<OverflowException>()));
     });
   });
 
@@ -241,14 +257,12 @@ void main() {
 
     test('Fail on node id', () {
       final remote = Hlc(_millis + 1, 0, 'abc');
-      expect(() => Hlc.recv(canonical, remote, millis: _millis),
-          throwsA(isA<DuplicateNodeException>()));
+      expect(() => Hlc.recv(canonical, remote, millis: _millis), throwsA(isA<DuplicateNodeException>()));
     });
 
     test('Fail on clock drift', () {
       final remote = Hlc(_millis + 60001, 0x42, 'abcd');
-      expect(() => Hlc.recv(canonical, remote, millis: _millis),
-          throwsA(isA<ClockDriftException>()));
+      expect(() => Hlc.recv(canonical, remote, millis: _millis), throwsA(isA<ClockDriftException>()));
     });
   });
 }
